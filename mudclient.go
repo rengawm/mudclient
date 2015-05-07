@@ -107,6 +107,14 @@ func (mudConn *MudConnection) interceptInput(line string) bool {
 		case "autoresearch":
 			script := &ResearchScript{&BaseScript{}}
 			script.Execute(args, script, mudConn)
+		case "autoponder":
+			script := &PonderScript{&BaseScript{}}
+			script.Execute(args, script, mudConn)
+		case "stopscripts":
+			mudConn.RunningScripts = make([]Script, 0)
+			fmt.Println("All scripts aborted.")
+		case "listscripts":
+			fmt.Printf("Running scripts: %q\n", mudConn.RunningScripts)
 		default:
 			intercepted = false
 	}

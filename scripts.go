@@ -107,3 +107,23 @@ func (script *ResearchScript) innerExecute(args []string) {
 		}
 	}
 }
+
+
+type PonderScript struct {
+	*BaseScript
+}
+
+func (script *PonderScript) innerExecute(args []string) {
+	script.MudConn.sendLine("ponder")
+	
+	for {
+		select {
+			case line := <-script.MudOutput:
+				if strings.Contains(line, "You ponder for some time, but fail to figure anything out") {
+					script.MudConn.sendLine("ponder")
+				} else if strings.Contains(line, "You ponder for some time, and things seem clearer.") {
+					script.MudConn.sendLine("ponder")
+				}
+		}
+	}
+}
