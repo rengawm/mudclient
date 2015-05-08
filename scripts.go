@@ -79,12 +79,14 @@ func (script *ResearchScript) innerExecute(args []string) {
 			for _, skill := range strings.Split(skillLine, "%") {
 				skill = strings.TrimSpace(skill)
 				if len(skill) > 0 {
-					skillParts := strings.Split(skill, "  ")
-					skillLevel, err := strconv.ParseInt(skillParts[1], 0, 0)
+					lastSpace := strings.LastIndex(skill, " ")
+					skillName := strings.TrimSpace(skill[:lastSpace])
+					skillPercentString := strings.TrimSpace(skill[lastSpace:])
+					skillPercent, err := strconv.ParseInt(skillPercentString, 0, 0)
 					if err != nil { fmt.Errorf("Error in parseInt: %s", err.Error()) }
 					
-					if (skillLevel < 76) {
-						researchQueue = append(researchQueue, skillParts[0])
+					if (skillPercent < 76) {
+						researchQueue = append(researchQueue, skillName)
 					}
 				}
 			}
