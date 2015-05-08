@@ -110,6 +110,9 @@ func (mudConn *MudConnection) interceptInput(line string) bool {
 		case "autoponder":
 			script := &PonderScript{&BaseScript{}}
 			script.Execute(args, script, mudConn)
+		case "autoclothing":
+			script := &ClothesScript{&BaseScript{}}
+			script.Execute(args, script, mudConn)
 		case "stopscripts":
 			mudConn.RunningScripts = make([]Script, 0)
 			fmt.Println("All scripts aborted.")

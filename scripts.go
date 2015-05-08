@@ -129,3 +129,23 @@ func (script *PonderScript) innerExecute(args []string) {
 		}
 	}
 }
+
+
+type ClothesScript struct {
+	*BaseScript
+}
+
+func (script *ClothesScript) innerExecute(args []string) {
+	script.MudConn.sendLine("makeclothing legs &bSlim Blue Trousers&w")
+	
+	for {
+		select {
+			case line := <-script.MudOutput:
+				if strings.Contains(line, "You can't figure out what to do.") {
+					script.MudConn.sendLine("makeclothing legs &bSlim Blue Trousers&w")
+				} else if strings.Contains(line, "You finish your work and hold up your newly created clothing") {
+					script.MudConn.sendLine("makeclothing legs &bSlim Blue Trousers&w")
+				}
+		}
+	}
+}
