@@ -101,9 +101,10 @@ func (mudConn *MudConnection) interceptInput(line string) bool {
 		return false
 	}
 
+	command := strings.Fields(line)[0]
 	args := strings.Fields(line)[1:]
 	intercepted := true
-	switch line {
+	switch command {
 		case "autoresearch":
 			script := &ResearchScript{&BaseScript{}}
 			script.Execute(args, script, mudConn)
@@ -112,6 +113,9 @@ func (mudConn *MudConnection) interceptInput(line string) bool {
 			script.Execute(args, script, mudConn)
 		case "autoclothing":
 			script := &ClothesScript{&BaseScript{}}
+			script.Execute(args, script, mudConn)
+		case "autostudy":
+			script := &StudyScript{&BaseScript{}}
 			script.Execute(args, script, mudConn)
 		case "stopscripts":
 			mudConn.RunningScripts = make([]Script, 0)

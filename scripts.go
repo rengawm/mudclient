@@ -149,3 +149,23 @@ func (script *ClothesScript) innerExecute(args []string) {
 		}
 	}
 }
+
+
+type StudyScript struct {
+	*BaseScript
+}
+
+func (script *StudyScript) innerExecute(args []string) {
+	script.MudConn.sendLine(fmt.Sprintf("study %s", args[0]))
+	
+	for {
+		select {
+			case line := <-script.MudOutput:
+				if strings.Contains(line, "After some time studying you feel you know more") {
+					script.MudConn.sendLine(fmt.Sprintf("study %s", args[0]))
+				} else if strings.Contains(line, "You study it for some time") {
+					script.MudConn.sendLine(fmt.Sprintf("study %s", args[0]))
+				}
+		}
+	}
+}
