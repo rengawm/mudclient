@@ -15,7 +15,7 @@ type MudConnection struct {
 }
 
 func main() {
-	conn, err := net.Dial("tcp", "legendsofthejedi.com:5656")
+	//conn, err := net.Dial("tcp", "legendsofthejedi.com:5656")
 	conn, err := net.Dial("tcp", "arkmud.org:4200")
 	if err != nil {
 		log.Fatalf("Error connecting: %s", err.Error())
