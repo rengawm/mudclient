@@ -1,4 +1,4 @@
-package main 
+package main
 
 import (
 	"bufio"
@@ -10,15 +10,17 @@ import (
 )
 
 type MudConnection struct {
-	Conn net.Conn
+	Conn           net.Conn
 	RunningScripts []Script
 }
 
 func main() {
 	conn, err := net.Dial("tcp", "legendsofthejedi.com:5656")
-//	conn, err := net.Dial("tcp", "arkmud.org:4200")
-	if err != nil { log.Fatalf("Error connecting: %s", err.Error()) }
-	
+	conn, err := net.Dial("tcp", "arkmud.org:4200")
+	if err != nil {
+		log.Fatalf("Error connecting: %s", err.Error())
+	}
+
 	mudConn := new(MudConnection)
 	mudConn.Conn = conn
 	mudConn.RunningScripts = make([]Script, 0)
@@ -35,14 +37,14 @@ func (mudConn *MudConnection) startOutputScanner() {
 	scanner.Split(bufio.ScanBytes)
 	scannerChar := ""
 	lineBuf := ""
-	
+
 	for scanner.Scan() {
 		if scanner.Err() != nil {
 			log.Fatalf("Error reading from server: %s", scanner.Err().Error())
 		} else {
 			scannerChar = scanner.Text()
 			fmt.Print(scannerChar)
-			
+
 			if scannerChar[0] == 13 {
 				if len(lineBuf) > 0 {
 					mudConn.checkOutputForTriggers(lineBuf)
@@ -68,7 +70,9 @@ func (mudConn *MudConnection) startInputScanner() {
 func (mudConn *MudConnection) sendLine(line string) {
 	fmt.Printf("<< %s\n", line)
 	_, err := mudConn.Conn.Write([]byte(fmt.Sprintf("%s\n\r", line)))
-	if err != nil { log.Fatalf("Error writing: %s", err.Error()) }
+	if err != nil {
+		log.Fatalf("Error writing: %s", err.Error())
+	}
 }
 
 func (mudConn *MudConnection) checkOutputForTriggers(line string) {
@@ -88,9 +92,9 @@ func (mudConn *MudConnection) checkOutputForTriggers(line string) {
 			}
 		}
 	}
-	
+
 	line = strings.TrimSpace(cleanLine)
-	
+
 	for _, script := range mudConn.RunningScripts {
 		script.SendOutput(line)
 	}
@@ -105,26 +109,26 @@ func (mudConn *MudConnection) interceptInput(line string) bool {
 	args := strings.Fields(line)[1:]
 	intercepted := true
 	switch command {
-		case "autoresearch":
-			script := &ResearchScript{&BaseScript{}}
-			script.Execute(args, script, mudConn)
-		case "autoponder":
-			script := &PonderScript{&BaseScript{}}
-			script.Execute(args, script, mudConn)
-		case "autoclothing":
-			script := &ClothesScript{&BaseScript{}}
-			script.Execute(args, script, mudConn)
-		case "autostudy":
-			script := &StudyScript{&BaseScript{}}
-			script.Execute(args, script, mudConn)
-		case "stopscripts":
-			mudConn.RunningScripts = make([]Script, 0)
-			fmt.Println("All scripts aborted.")
-		case "listscripts":
-			fmt.Printf("Running scripts: %q\n", mudConn.RunningScripts)
-		default:
-			intercepted = false
+	case "autoresearch":
+		script := &ResearchScript{&BaseScript{}}
+		script.Execute(args, script, mudConn)
+	case "autoponder":
+		script := &PonderScript{&BaseScript{}}
+		script.Execute(args, script, mudConn)
+	case "autoclothing":
+		script := &ClothesScript{&BaseScript{}}
+		script.Execute(args, script, mudConn)
+	case "autostudy":
+		script := &StudyScript{&BaseScript{}}
+		script.Execute(args, script, mudConn)
+	case "stopscripts":
+		mudConn.RunningScripts = make([]Script, 0)
+		fmt.Println("All scripts aborted.")
+	case "listscripts":
+		fmt.Printf("Running scripts: %q\n", mudConn.RunningScripts)
+	default:
+		intercepted = false
 	}
-	
+
 	return intercepted
 }
