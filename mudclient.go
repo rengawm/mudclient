@@ -9,123 +9,189 @@ import (
 	"strings"
 )
 
+var (
+	escapedXML = map[string]string{
+		"lt":   `<`,
+		"gt":   `>`,
+		"amp":  `&`,
+		"apos": `'`,
+		"quot": `"`,
+	}
+)
+
 type MudConnection struct {
-	Conn           net.Conn
-	RunningScripts []Script
+	Conn     net.Conn
+	Mapper   *Mapper
+	Debug    bool
+	XMLMode  bool
+	OutChans []chan string
+	InChans  []chan string
+	TagChans []chan *Tag
 }
 
 func main() {
-	//conn, err := net.Dial("tcp", "legendsofthejedi.com:5656")
-	conn, err := net.Dial("tcp", "arkmud.org:4200")
+	conn, err := net.Dial("tcp", "mume.org:4242")
 	if err != nil {
 		log.Fatalf("Error connecting: %s", err.Error())
 	}
 
-	mudConn := new(MudConnection)
-	mudConn.Conn = conn
-	mudConn.RunningScripts = make([]Script, 0)
+	_, err = conn.Write([]byte("~$#EX1\n3\n"))
+	if err != nil {
+		log.Fatalf("Error sending XML mode: %v", err)
+	}
+
+	mudConn := &MudConnection{
+		Conn: conn,
+	}
+	mudConn.Mapper = NewMapper(mudConn)
+
 	mudConn.startScanners()
 }
 
-func (mudConn *MudConnection) startScanners() {
-	go mudConn.startInputScanner()
-	mudConn.startOutputScanner()
+func (self *MudConnection) startScanners() {
+	go self.startInputScanner()
+	go self.Mapper.Start()
+	self.startOutputScanner()
 }
 
-func (mudConn *MudConnection) startOutputScanner() {
-	scanner := bufio.NewScanner(mudConn.Conn)
+func (self *MudConnection) startOutputScanner() {
+	scanner := bufio.NewScanner(self.Conn)
 	scanner.Split(bufio.ScanBytes)
 	scannerChar := ""
 	lineBuf := ""
+
+	inEscaped := false
+	escapedBuf := ""
+
+	inTag := false
+	tagBuf := ""
+	var currentTag *Tag
 
 	for scanner.Scan() {
 		if scanner.Err() != nil {
 			log.Fatalf("Error reading from server: %s", scanner.Err().Error())
 		} else {
 			scannerChar = scanner.Text()
-			fmt.Print(scannerChar)
 
-			if scannerChar[0] == 13 {
+			// Handle XML tags - <room ...>
+			if !inTag {
+				if scannerChar == "<" {
+					inTag = true
+				}
+			} else {
+				if scannerChar == ">" {
+					if !strings.HasPrefix(tagBuf, "/") {
+						// A beginning tag (<tag> or <tag />) - set currentTag and deal with tag contents
+						currentTag = &Tag{
+							Parent:     currentTag,
+							Attributes: make(map[string]string),
+						}
+
+						tagParts := strings.Fields(strings.Trim(tagBuf, "/ "))
+						currentTag.Name = tagParts[0]
+						for i := 1; i < len(tagParts); i++ {
+							attributeParts := strings.SplitN(tagParts[i], "=", 2)
+							if len(attributeParts) == 2 {
+								currentTag.Attributes[attributeParts[0]] = strings.Trim(attributeParts[1], `'"`)
+							}
+						}
+					}
+
+					// Figure out if we're closing a tag. (Either </tag> or <tag />)
+					if strings.HasPrefix(tagBuf, "/") || strings.HasSuffix(tagBuf, "/") {
+						// Publish closed tag to channels
+						for _, tagChan := range self.TagChans {
+							tagChan <- currentTag
+						}
+						if currentTag.Parent != nil {
+							currentTag.Parent.Children = append(currentTag.Parent.Children, currentTag)
+						}
+						currentTag = currentTag.Parent
+					}
+
+					scannerChar = ""
+					tagBuf = ""
+					inTag = false
+				} else {
+					tagBuf += scannerChar
+				}
+			}
+
+			// Handle escaped characters - &gt; and the like.
+			if !inEscaped {
+				if scannerChar == "&" {
+					inEscaped = true
+				}
+			} else {
+				if scannerChar == ";" {
+					if char, ok := escapedXML[escapedBuf]; ok {
+						scannerChar = char
+					} else {
+						log.Printf("UNKNOWN XML ESCAPE SEQ: %v", escapedBuf)
+					}
+					escapedBuf = ""
+					inEscaped = false
+				} else {
+					escapedBuf += scannerChar
+				}
+			}
+
+			if !inEscaped && !inTag {
+				fmt.Print(scannerChar)
+				if currentTag != nil {
+					currentTag.TextContent += scannerChar
+				}
+			}
+
+			if len(scannerChar) > 0 && scannerChar[0] == 13 {
 				if len(lineBuf) > 0 {
-					mudConn.checkOutputForTriggers(lineBuf)
+					for _, outChan := range self.OutChans {
+						outChan <- lineBuf
+					}
 					lineBuf = ""
 				}
 			} else {
-				lineBuf = fmt.Sprintf("%s%s", lineBuf, scannerChar)
+				lineBuf += scannerChar
 			}
 		}
 	}
 }
 
-func (mudConn *MudConnection) startInputScanner() {
+func (self *MudConnection) startInputScanner() {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		commandLine := scanner.Text()
-		if !mudConn.interceptInput(commandLine) {
-			mudConn.sendLine(commandLine)
+		if !self.interceptInput(commandLine) {
+			self.sendLine(commandLine)
 		}
 	}
 }
 
-func (mudConn *MudConnection) sendLine(line string) {
-	fmt.Printf("<< %s\n", line)
-	_, err := mudConn.Conn.Write([]byte(fmt.Sprintf("%s\n\r", line)))
+func (self *MudConnection) sendLine(line string) {
+	_, err := self.Conn.Write([]byte(fmt.Sprintf("%s\n\r", line)))
 	if err != nil {
 		log.Fatalf("Error writing: %s", err.Error())
 	}
-}
-
-func (mudConn *MudConnection) checkOutputForTriggers(line string) {
-	// Sanitize the line - remove all color codes, newline, etc.
-	escaping := false
-	cleanLine := ""
-	for i := 0; i < len(line); i++ {
-		if line[i] == 0x1B {
-			escaping = true
-		} else {
-			if !escaping {
-				cleanLine = fmt.Sprintf("%s%c", cleanLine, line[i])
-			} else {
-				if line[i] == 'm' {
-					escaping = false
-				}
-			}
-		}
-	}
-
-	line = strings.TrimSpace(cleanLine)
-
-	for _, script := range mudConn.RunningScripts {
-		script.SendOutput(line)
+	for _, inChan := range self.InChans {
+		inChan <- line
 	}
 }
 
-func (mudConn *MudConnection) interceptInput(line string) bool {
+func (self *MudConnection) interceptInput(line string) bool {
 	if len(strings.TrimSpace(line)) == 0 {
 		return false
 	}
 
 	command := strings.Fields(line)[0]
-	args := strings.Fields(line)[1:]
+	// args := strings.Fields(line)[1:]
 	intercepted := true
 	switch command {
-	case "autoresearch":
-		script := &ResearchScript{&BaseScript{}}
-		script.Execute(args, script, mudConn)
-	case "autoponder":
-		script := &PonderScript{&BaseScript{}}
-		script.Execute(args, script, mudConn)
-	case "autoclothing":
-		script := &ClothesScript{&BaseScript{}}
-		script.Execute(args, script, mudConn)
-	case "autostudy":
-		script := &StudyScript{&BaseScript{}}
-		script.Execute(args, script, mudConn)
-	case "stopscripts":
-		mudConn.RunningScripts = make([]Script, 0)
-		fmt.Println("All scripts aborted.")
-	case "listscripts":
-		fmt.Printf("Running scripts: %q\n", mudConn.RunningScripts)
+	case "debug":
+		self.Debug = !self.Debug
+		fmt.Printf("[[ Debug mode: %v ]]\n", self.Debug)
+	case "printmap":
+		fmt.Printf("\n[[ Map data coming up... ]]\n")
+		self.Mapper.PrintData()
 	default:
 		intercepted = false
 	}
